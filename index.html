@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>❤️ Cœur de particules</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000}
+body{display:flex;align-items:center;justify-content:center}
+canvas{display:block;width:100vw;height:100vh}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
+
+let W,H,cx,cy,scale;
+let particles=[];
+let startTime=performance.now();
+
+const TAU=Math.PI*2;
+
+/* -------------------------------------------------
+   Réglages de l'animation
+   ------------------------------------------------- */
+const DURATION=5200;       // temps de formation du cœur
+const FINAL_PULSE=0.025;  // pulsation finale
+
+function resize(){
+    const dpr=Math.min(window.devicePixelRatio||1,2);
+    W=innerWidth;
+    H=innerHeight;
+    cx=W/2;
+    cy=H/2;
+    scale=Math.min(W,H)/42;
+
+    canvas.width=W*dpr;
+    canvas.height=H*dpr;
+    canvas.style.width=W+"px";
+    canvas.style.height=H+"px";
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+
+    createParticles();
+}
+
+window.addEventListener("resize",resize);
+
+
+/* -------------------------------------------------
+   Forme mathématique du cœur
+   ------------------------------------------------- */
+function heartPoint(t,s=scale){
+    const x=16*Math.sin(t)**3;
+    const y=
+        13*Math.cos(t)
+        -5*Math.cos(2*t)
+        -2*Math.cos(3*t)
+        -Math.cos(4*t);
+
+    return {
+        x:cx+x*s,
+        y:cy-y*s
+    };
+}
+
+
+/* -------------------------------------------------
+   Fonction easing : mouvement doux
+   ------------------------------------------------- */
+function ease(t){
+    t=Math.max(0,Math.min(1,t));
+    return t*t*(3-2*t);
+}
+
+
+/* -------------------------------------------------
+   Position initiale d'une particule
+   ------------------------------------------------- */
+function randomStart(target,kind){
+    let x,y;
+
+    if(kind==="core"){
+        // Les premières particules restent près du centre
+        x=cx+(Math.random()-.5)*18*scale;
+        y=cy+(Math.random()-.5)*25*scale;
+    }else{
+        // Particules dispersées autour du futur cœur
+        const angle=Math.random()*TAU;
+        const radius=(18+Math.random()*18)*scale;
+
+        x=cx+Math.cos(angle)*radius;
+        y=cy+Math.sin(angle)*radius;
+
+        // légère dispersion supplémentaire
+        x+=(Math.random()-.5)*10*scale;
+        y+=(Math.random()-.5)*10*scale;
+    }
+
+    return {x,y};
+}
+
+
+/* -------------------------------------------------
+   Création des particules avec différentes étapes
+   ------------------------------------------------- */
+function createParticles(){
+
+    particles=[];
+
+    const total=Math.min(
+        8500,
+        Math.max(3000,Math.floor(W*H/145))
+    );
+
+    for(let i=0;i<total;i++){
+
+        const t=Math.random()*TAU;
+
+        // facteur aléatoire pour remplir le cœur
+        const factor=Math.pow(Math.random(),0.55);
+
+        const edge=heartPoint(t);
+
+        const target={
+            x:cx+(edge.x-cx)*factor,
+            y:cy+(edge.y-cy)*factor
+        };
+
+        /*
+          phase :
+          0 = cœur central / verticale
+          1 = intérieur
+          2 = contour
+        */
+
+        let phase;
+
+        // La partie verticale et la pointe arrivent en premier
+        const nx=Math.abs((target.x-cx)/scale);
+        const ny=(target.y-cy)/scale;
+
+        if(nx<3.5 && ny>0.5){
+            phase=0;
+        }
+        else if(factor<0.72){
+            phase=1;
+        }
+        else{
+            phase=2;
+        }
+
+        // Certaines particules de la pointe sont prioritaires
+        if(target.y>cy+6*scale && Math.random()<0.55){
+            phase=0;
+        }
+
+        const start=randomStart(target,phase==="core"?"core":"normal");
+
+        particles.push({
+            sx:start.x,
+            sy:start.y,
+            tx:target.x,
+            ty:target.y,
+
+            phase,
+
+            size:
+                phase===2
+                ? Math.random()*1.6+0.45
+                : Math.random()*1.35+0.3,
+
+            alpha:
+                Math.random()*0.55+0.25,
+
+            angle:Math.random()*TAU,
+            speed:Math.random()*1.4+0.5,
+
+            // petit délai individuel
+            delay:Math.random()*0.45
+        });
+    }
+
+    /*
+      Beaucoup de particules supplémentaires sur le contour.
+      Elles arrivent en dernier, comme dans la vidéo.
+    */
+    for(let i=0;i<1800;i++){
+
+        const t=Math.random()*TAU;
+        const p=heartPoint(t);
+
+        const start=randomStart(p,"normal");
+
+        particles.push({
+            sx:start.x,
+            sy:start.y,
+
+            tx:p.x+(Math.random()-.5)*4,
+            ty:p.y+(Math.random()-.5)*4,
+
+            phase:2,
+
+            size:Math.random()*1.8+0.45,
+            alpha:Math.random()*0.65+0.3,
+
+            angle:Math.random()*TAU,
+            speed:Math.random()*1.5+0.5,
+            delay:Math.random()*0.35
+        });
+    }
+
+    startTime=performance.now();
+}
+
+
+/* -------------------------------------------------
+   Dessin
+   ------------------------------------------------- */
+function animate(now){
+
+    const elapsed=now-startTime;
+
+    /*
+      Fond noir avec une légère traînée.
+    */
+    ctx.fillStyle="rgba(0,0,0,0.22)";
+    ctx.fillRect(0,0,W,H);
+
+    /*
+      Progression globale.
+    */
+    const global=Math.min(1,elapsed/DURATION);
+
+    /*
+      Étapes :
+      0.0 - 1.3s : particules dispersées
+      1.0 - 2.8s : cœur central
+      2.0 - 4.2s : intérieur
+      3.0 - 5.2s : contour
+      après 5.2s : cœur final
+    */
+
+    for(const p of particles){
+
+        let start;
+        let end;
+
+        if(p.phase===0){
+            start=500+p.delay*400;
+            end=2500+p.delay*300;
+        }
+        else if(p.phase===1){
+            start=1200+p.delay*500;
+            end=3900+p.delay*400;
+        }
+        else{
+            start=2500+p.delay*500;
+            end=5000+p.delay*300;
+        }
+
+        let progress;
+
+        if(elapsed<start){
+            progress=0;
+        }
+        else{
+            progress=ease(
+                (elapsed-start)/(end-start)
+            );
+        }
+
+        /*
+          Quand le cœur est terminé, on garde une
+          pulsation très légère.
+        */
+        let pulse=1;
+
+        if(global>=1){
+            pulse=
+                1+
+                Math.sin(now*0.0025)*
+                FINAL_PULSE;
+        }
+
+        let x;
+        let y;
+
+        if(progress<1){
+
+            /*
+              Mouvement légèrement "vivant".
+            */
+            const drift=
+                (1-progress)*
+                Math.sin(now*0.002*p.speed+p.angle)*
+                2.2;
+
+            x=
+                p.sx+
+                (p.tx-p.sx)*progress+
+                drift;
+
+            y=
+                p.sy+
+                (p.ty-p.sy)*progress+
+                Math.cos(now*0.002*p.speed+p.angle)*
+                (1-progress)*2.2;
+
+        }else{
+
+            x=
+                cx+
+                (p.tx-cx)*pulse+
+                Math.sin(now*0.002*p.speed+p.angle)*0.7;
+
+            y=
+                cy+
+                (p.ty-cy)*pulse+
+                Math.cos(now*0.002*p.speed+p.angle)*0.7;
+        }
+
+        /*
+          Scintillement.
+        */
+        const twinkle=
+            0.65+
+            Math.sin(now*0.003+p.angle)*0.35;
+
+        /*
+          Rose proche de l'image.
+        */
+        const r=255;
+        const g=70+Math.random()*95;
+        const b=175+Math.random()*80;
+
+        ctx.beginPath();
+
+        ctx.arc(
+            x,
+            y,
+            p.size,
+            0,
+            TAU
+        );
+
+        ctx.fillStyle=
+            `rgba(${r},${g},${b},${p.alpha*twinkle})`;
+
+        ctx.fill();
+    }
+
+
+    /*
+      À la fin, un contour lumineux très fin
+      renforce la forme du cœur.
+    */
+    if(global>0.72){
+
+        const reveal=
+            ease((global-0.72)/0.28);
+
+        const pulse=
+            1+
+            Math.sin(now*0.0025)*FINAL_PULSE;
+
+        ctx.beginPath();
+
+        const points=650;
+
+        for(let i=0;i<=points;i++){
+
+            const t=i/points*TAU;
+            const p=heartPoint(t,scale*pulse);
+
+            if(i===0)
+                ctx.moveTo(p.x,p.y);
+            else
+                ctx.lineTo(p.x,p.y);
+        }
+
+        ctx.closePath();
+
+        ctx.shadowBlur=18*reveal;
+        ctx.shadowColor="rgba(255,70,190,0.85)";
+
+        ctx.strokeStyle=
+            `rgba(255,115,205,${0.35*reveal})`;
+
+        ctx.lineWidth=1.2;
+
+        ctx.stroke();
+
+        ctx.shadowBlur=0;
+    }
+
+
+    /*
+      Petit mot final : il apparaît uniquement lorsque
+      le cœur a terminé sa formation.
+    */
+    if (global >= 1) {
+        const messageProgress =
+            Math.min(1, (elapsed - DURATION) / 900);
+
+        ctx.save();
+
+        ctx.globalAlpha = messageProgress;
+
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        ctx.font =
+            `600 ${Math.max(18, Math.min(30, W * 0.055))}px Arial, sans-serif`;
+
+        ctx.shadowBlur = 14;
+        ctx.shadowColor = "rgba(255, 90, 190, 0.75)";
+
+        ctx.fillStyle = "rgba(255, 150, 220, 0.95)";
+
+        ctx.fillText(
+            "Amène et Abdelghani",
+            cx,
+            cy + 21.5 * scale
+        );
+
+        ctx.restore();
+    }
+
+    requestAnimationFrame(animate);
+}
+
+
+resize();
+requestAnimationFrame(animate);
+
+</script>
+</body>
+</html>
